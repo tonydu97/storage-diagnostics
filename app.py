@@ -33,7 +33,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 
 
-
+lst_vars = ['Price', 'PV avail', 'PV gen', 'PV gen to grid', 'PV gen to charge', 'Grid gen to charge', 'Storage charge', 'Storage discharge', 'Storage SOC']
 
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP], suppress_callback_exceptions=True)
 server = app.server  # for Heroku deployment
@@ -44,8 +44,7 @@ NAVBAR = dbc.Navbar(
         html.Img(src=app.get_asset_url('branding.png'), height='40px'),
         dbc.Nav(
             [
-                dbc.NavItem(dbc.NavLink('DPT Dashboard', href='/dashboard', id='dashboard-link', active=True)),
-                dbc.NavItem(dbc.NavLink('Diagnostics Library - Generate XLSX', id='download-link', href='/download'))
+                dbc.NavItem(dbc.NavLink('Storage Model Diagnostics', href='/dashboard', id='dashboard-link', active=True))
             ], navbar=True, style={'marginLeft': '20px'}
         )
 
@@ -86,12 +85,18 @@ INPUTS = dbc.Jumbotron(
                         html.Div(style = {'marginBottom':25}),
                         html.Label('Select Start Time', className='lead'),
                         dbc.Input(
-                            id ='input-hours', type='datetime-local', style={'marginBottom': 25}
+                            id ='input-start', type='datetime-local', style={'marginBottom': 25}, value='2018-01-01T00:00'
                         ),
                         html.Label('Select End Time', className='lead'),
                         dbc.Input(
-                            id ='input-hours', type='datetime-local', style={'marginBottom': 25}
+                            id ='input-end', type='datetime-local', style={'marginBottom': 25}, value='2018-12-31T23:00'
                         ),
+                        html.Label('Select Columns', className='lead'),
+                        dcc.Dropdown(
+                            id='var-dropdown', multi=True,
+                            value=['Price', 'PV gen to grid'],
+                            options = [{'label':i, 'value':i} for i in lst_vars]
+                        )
                     ], fluid = True
                 )
             ]
@@ -102,7 +107,55 @@ INPUTS = dbc.Jumbotron(
 
 CONTENT = html.Div(
     [
-        dbc.Card(id='page-content', style={'height':'720px'})
+        dcc.Loading(
+            id='loading-content',
+            children = [
+                dbc.CardGroup(
+                    [
+                        dbc.Card(
+                            [
+                                html.H5('PV Power'),
+                                html.P(id='pv-power-value')
+                            ], body=True
+                        ),
+                        dbc.Card(
+                            [
+                                html.H5('Storage Power'),
+                                html.P(id='storage-power-value')
+                            ], body=True
+                        ),
+                        dbc.Card(
+                            [
+                                html.H5('Storage Energy'),
+                                html.P(id='storage-energy-value')
+                            ], body=True
+                        ),
+                        dbc.Card(
+                            [
+                                html.H5('Efficiency'),
+                                html.P(id='efficiency-value')
+                            ], body=True
+                        ),
+                        dbc.Card(
+                            [
+                                html.H5('Duration'),
+                                html.P(id='duration-value')
+                            ], body=True
+                        ),
+                    ]
+                ),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                dcc.Graph(id='graph-timeseries')
+                            ]
+                        )
+                    ]
+                )
+            ]
+        )
+
     ]
 )
 
@@ -166,6 +219,14 @@ def update_output(contents, filename):
 
 
 
+# @app.callback(Output('graph-timeseries', 'figure'),
+# [Input('')]    
+# )
+
+
+
+
+
 @app.callback(
     Output('page-content', 'children'),
     [Input('url', 'pathname')]
@@ -183,17 +244,17 @@ def display_page(pathname):
         ]
     )
 
-@app.callback(
-    [Output('dashboard-link', 'active'),
-    Output('download-link', 'active')],
-    [Input('url', 'pathname')]
-)
-def update_active_link(pathname):
-    if pathname in ['/', '/dashboard']:
-        return True, False
-    elif pathname == '/download':
-        return False, True
-    return False, False
+# @app.callback(
+#     [Output('dashboard-link', 'active'),
+#     Output('download-link', 'active')],
+#     [Input('url', 'pathname')]
+# )
+# def update_active_link(pathname):
+#     if pathname in ['/', '/dashboard']:
+#         return True, False
+#     elif pathname == '/download':
+#         return False, True
+#     return False, False
 
 
 app.title = 'Storage Diagnostics'
