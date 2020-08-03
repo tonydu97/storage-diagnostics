@@ -31,6 +31,7 @@ import numpy as np
 import json
 import plotly.graph_objects as go
 import plotly.express as px
+from plotly.subplots import make_subplots
 
 
 lst_vars = ['Price', 'PV avail', 'PV gen', 'PV gen to grid', 'PV gen to charge', 'Grid gen to charge', 'Storage charge', 'Storage discharge', 'Storage SOC']
@@ -58,7 +59,7 @@ INPUTS = dbc.Jumbotron(
         dcc.Loading(
             id = 'loading-inputs',
             children = [
-                html.Div(id='store-df', style={'display' : 'none'}),
+                # html.Div(id='store-df', style={'display' : 'none'}),
                 dbc.Container(
                     [
                         html.H4(children='Inputs', className='display-5', style = {'fontSize': 36}),
@@ -81,7 +82,7 @@ INPUTS = dbc.Jumbotron(
                                 'margin': '10px'
                             },
                         ),
-                        html.Div(id='output-data-upload'),
+                        html.Div(id='store-df', style={'display' : 'none'}),
                         html.Div(style = {'marginBottom':25}),
                         html.Label('Select Start Time', className='lead'),
                         dbc.Input(
@@ -89,7 +90,7 @@ INPUTS = dbc.Jumbotron(
                         ),
                         html.Label('Select End Time', className='lead'),
                         dbc.Input(
-                            id ='input-end', type='datetime-local', style={'marginBottom': 25}, value='2018-12-31T23:00'
+                            id ='input-end', type='datetime-local', style={'marginBottom': 25}, value='2018-01-31T23:00'
                         ),
                         html.Label('Select Columns', className='lead'),
                         dcc.Dropdown(
@@ -114,19 +115,19 @@ CONTENT = html.Div(
                     [
                         dbc.Card(
                             [
-                                html.H5('PV Power'),
+                                html.H5('PV Power (MW)'),
                                 html.P(id='pv-power-value')
                             ], body=True
                         ),
                         dbc.Card(
                             [
-                                html.H5('Storage Power'),
+                                html.H5('Storage Power (MW)'),
                                 html.P(id='storage-power-value')
                             ], body=True
                         ),
                         dbc.Card(
                             [
-                                html.H5('Storage Energy'),
+                                html.H5('Storage Energy (MWH)'),
                                 html.P(id='storage-energy-value')
                             ], body=True
                         ),
@@ -138,7 +139,7 @@ CONTENT = html.Div(
                         ),
                         dbc.Card(
                             [
-                                html.H5('Duration'),
+                                html.H5('Duration (Hours)'),
                                 html.P(id='duration-value')
                             ], body=True
                         ),
@@ -173,26 +174,6 @@ BODY = dbc.Container(
     className='mt-12', fluid = True
 )
 
-DOWNLOAD = dbc.Container(
-    [
-        dbc.Jumbotron(
-            [
-                html.H2('Select Input Folder and Diagnostic'),
-                html.Div(style = {'marginBottom':'10px'}),
-                html.Label('Raw Results Folder'),
-                dcc.Dropdown(id='dl-case-dropdown', clearable=False, style = {'marginBottom': '20px'}),
-                html.Label('Diagnostic to Generate'),
-                dcc.Dropdown(id='dl-diagnostic-dropdown', clearable=False, style = {'marginBottom': '20px'}),
-                html.Label('Output Directory'),
-                html.Div(style = {'marginBottom':'10px'}),
-                dcc.Input(id='dl-output-textbox', size = '125'),
-                html.Hr(),
-                html.H2('Diagnostic-specific Inputs'),
-                dcc.Loading(html.Div(id='dl-diagnostic-inputs'))
-            ], style={'marginTop': 30}
-        )
-    ]
-)
 
 def parse_dataframe(contents, filename):
     content_type, content_string = contents.split(',')
@@ -202,16 +183,17 @@ def parse_dataframe(contents, filename):
         if 'csv' in filename:
             df = pd.read_csv(io.StringIO(decoded.decode('utf-8')))
         elif 'xls' in filename:
-            df = pd.read_excel(io.BytesIO(decoded))
+            df = pd.read_excel(io.BytesIO(decoded), header=None)
     except Exception as e:
         print(e)
         return html.Div(['There was an error processing this file.'])
 
     return df.to_json(date_format='iso', orient='split')
 
-@app.callback(Output('output-data-upload', 'children'),
-              [Input('upload-data', 'contents')],
-              [State('upload-data', 'filename')])
+@app.callback(
+    Output('store-df', 'children'),
+    [Input('upload-data', 'contents')],
+    [State('upload-data', 'filename')])
 def update_output(contents, filename):
     if contents is not None:
         return parse_dataframe(contents, filename)
@@ -219,30 +201,81 @@ def update_output(contents, filename):
 
 
 
-# @app.callback(Output('graph-timeseries', 'figure'),
-# [Input('')]    
-# )
+@app.callback(
+    Output('graph-timeseries', 'figure'),
+    [Input('store-df', 'children'),
+    Input('input-start', 'value'),
+    Input('input-end', 'value')])
+
+def update_content(json_df, starttime, endtime):
+    #Read Dataframe
+    if json_df == None:
+        raise PreventUpdate
+    df = pd.read_json(json_df, orient='split')
+
+    #Select data and generate timeseries graph
+    df.columns = df.iloc[4]
+    df_data = df.iloc[5:].reset_index()
+
+    df_data['Time'] = pd.to_datetime(df_data['Time'])
+
+    df_graph = df_data[(df_data['Time'] >= starttime) & (df_data['Time'] <= endtime)]
+
+    fig = make_subplots(specs=[[{'secondary_y' : True}]])
+
+    fig.add_trace(
+        go.Scatter(x=df_graph['Time'], y=df_graph['Price'], name='Price Data'), secondary_y=False)
+
+    fig.add_trace(
+        go.Scatter(x=df_graph['Time'], y=df_graph['Storage discharge'], name='Storage discharge'), secondary_y=True)
+
+    
+
+    #fig = px.line(df_graph, x='Time', y='Price')
 
 
-
-
+    return fig
 
 @app.callback(
-    Output('page-content', 'children'),
-    [Input('url', 'pathname')]
-)
-def display_page(pathname):
-    if pathname in ['/', '/dashboard']:
-        return [NAVBAR, BODY]
-    elif pathname == '/download':
-        return [NAVBAR, DOWNLOAD]
-    return dbc.Jumbotron(
-        [
-            html.H1('404: Not found', className='text-danger'),
-            html.Hr(),
-            html.P(f'The pathname {pathname} is invalid'),
-        ]
-    )
+    [Output('pv-power-value', 'children'),
+    Output('storage-power-value', 'children'),
+    Output('storage-energy-value', 'children'),
+    Output('efficiency-value', 'children'),
+    Output('duration-value', 'children')],
+    [Input('store-df', 'children')])
+
+def update_modelinfo(json_df):
+    #Read Dataframe
+    if json_df == None:
+        raise PreventUpdate
+    df = pd.read_json(json_df, orient='split')
+
+    #Update model info headers
+    pv_power = '{:.2f}'.format(df.iloc[0,1])
+    storage_power = '{:.2f}'.format(df.iloc[1,1])
+    storage_energy = '{:.2f}'.format(df.iloc[2,1])
+    efficiency = '{0:.0%}'.format(df.iloc[1,4])
+    duration = df.iloc[2,4]
+
+
+    return pv_power, storage_power, storage_energy, efficiency, duration 
+
+# @app.callback(
+#     Output('page-content', 'children'),
+#     [Input('url', 'pathname')]
+# )
+# def display_page(pathname):
+#     if pathname in ['/', '/dashboard']:
+#         return [NAVBAR, BODY]
+#     elif pathname == '/download':
+#         return [NAVBAR, DOWNLOAD]
+#     return dbc.Jumbotron(
+#         [
+#             html.H1('404: Not found', className='text-danger'),
+#             html.Hr(),
+#             html.P(f'The pathname {pathname} is invalid'),
+#         ]
+#     )
 
 # @app.callback(
 #     [Output('dashboard-link', 'active'),
@@ -261,8 +294,7 @@ app.title = 'Storage Diagnostics'
 def serve_layout():
     return html.Div(
         [
-            dcc.Location(id='url'),
-            html.Div(id='page-content') 
+            html.Div(id='page-content', children=[NAVBAR, BODY]) 
         ]
     )
 
