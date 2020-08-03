@@ -35,6 +35,7 @@ from plotly.subplots import make_subplots
 
 
 lst_vars = ['Price', 'PV avail', 'PV gen', 'PV gen to grid', 'PV gen to charge', 'Grid gen to charge', 'Storage charge', 'Storage discharge', 'Storage SOC']
+dict_units = {'Price':'$', 'PV avail':'Percentage (out of 1)', 'PV gen':'MWH', 'PV gen to grid':'MWH', 'PV gen to charge':'MWH', 'Grid gen to charge':'MWH', 'Storage charge':'MWH', 'Storage discharge':'MWH', 'Storage SOC':'MWH'}
 
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP], suppress_callback_exceptions=True)
 server = app.server  # for Heroku deployment
@@ -62,7 +63,7 @@ INPUTS = dbc.Jumbotron(
                 # html.Div(id='store-df', style={'display' : 'none'}),
                 dbc.Container(
                     [
-                        html.H4(children='Inputs', className='display-5', style = {'fontSize': 36}),
+                        html.H4(children='Global Inputs', className='display-5', style = {'fontSize': 36}),
                         html.Hr(className='my-2'),
                         html.Label('Import Results', className='lead'),
                         dcc.Upload(
@@ -86,17 +87,11 @@ INPUTS = dbc.Jumbotron(
                         html.Div(style = {'marginBottom':25}),
                         html.Label('Select Start Time', className='lead'),
                         dbc.Input(
-                            id ='input-start', type='datetime-local', style={'marginBottom': 25}, value='2018-01-01T00:00'
+                            id ='input-start', type='datetime-local', style={'marginBottom': 25}, value='2017-12-01T00:00'
                         ),
                         html.Label('Select End Time', className='lead'),
                         dbc.Input(
-                            id ='input-end', type='datetime-local', style={'marginBottom': 25}, value='2018-01-31T23:00'
-                        ),
-                        html.Label('Select Columns', className='lead'),
-                        dcc.Dropdown(
-                            id='var-dropdown', multi=True,
-                            value=['Price', 'PV gen to grid'],
-                            options = [{'label':i, 'value':i} for i in lst_vars]
+                            id ='input-end', type='datetime-local', style={'marginBottom': 25}, value='2017-12-01T23:00'
                         )
                     ], fluid = True
                 )
@@ -143,6 +138,40 @@ CONTENT = html.Div(
                                 html.P(id='duration-value')
                             ], body=True
                         ),
+                    ], style={'text-align': 'Center'}
+                ),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                html.H3('Timeseries Graph', style={'marginTop':25, 'marginBottom':10})
+                            ]
+                        )
+
+                    ]
+                ),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                html.Label('Select Primary Y-Axis Variable(s)'),
+                                dcc.Dropdown(
+                                    id='primaryaxis-drop', multi=True,
+                                    value=['Price'],
+                                    options = [{'label':i, 'value':i} for i in lst_vars]
+                                ),
+                            ], width=4
+                        ),
+                        dbc.Col(
+                            [
+                                html.Label('Select Secondary Y-Axis Variable(s) - Optional '),
+                                dcc.Dropdown(
+                                    id='secondaryaxis-drop', multi=True,
+                                    value=['PV gen to grid'],
+                                    options = [{'label':i, 'value':i} for i in lst_vars]
+                                ),
+                            ], width=4
+                        )
                     ]
                 ),
                 dbc.Row(
@@ -150,6 +179,16 @@ CONTENT = html.Div(
                         dbc.Col(
                             [
                                 dcc.Graph(id='graph-timeseries')
+                            ]
+                        )
+                    ]
+                ),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                html.H3('Battery and PV Flow'),
+                                dcc.Graph(id='graph-batteryflow')
                             ]
                         )
                     ]
@@ -176,6 +215,7 @@ BODY = dbc.Container(
 
 
 def parse_dataframe(contents, filename):
+
     content_type, content_string = contents.split(',')
 
     decoded = base64.b64decode(content_string)
@@ -195,7 +235,9 @@ def parse_dataframe(contents, filename):
     [Input('upload-data', 'contents')],
     [State('upload-data', 'filename')])
 def update_output(contents, filename):
-    if contents is not None:
+    if contents is None:
+        raise PreventUpdate
+    else:
         return parse_dataframe(contents, filename)
 
 
@@ -205,9 +247,11 @@ def update_output(contents, filename):
     Output('graph-timeseries', 'figure'),
     [Input('store-df', 'children'),
     Input('input-start', 'value'),
-    Input('input-end', 'value')])
+    Input('input-end', 'value'),
+    Input('primaryaxis-drop', 'value'),
+    Input('secondaryaxis-drop', 'value')])
 
-def update_content(json_df, starttime, endtime):
+def update_content(json_df, starttime, endtime, primaryvars, secondaryvars):
     #Read Dataframe
     if json_df == None:
         raise PreventUpdate
@@ -221,17 +265,28 @@ def update_content(json_df, starttime, endtime):
 
     df_graph = df_data[(df_data['Time'] >= starttime) & (df_data['Time'] <= endtime)]
 
-    fig = make_subplots(specs=[[{'secondary_y' : True}]])
 
-    fig.add_trace(
-        go.Scatter(x=df_graph['Time'], y=df_graph['Price'], name='Price Data'), secondary_y=False)
+    if len(secondaryvars) != 0:
+        fig = make_subplots(specs=[[{'secondary_y' : True}]])
 
-    fig.add_trace(
-        go.Scatter(x=df_graph['Time'], y=df_graph['Storage discharge'], name='Storage discharge'), secondary_y=True)
+        for var in primaryvars:
+            fig.add_trace(go.Scatter(x=df_graph['Time'], y=df_graph[var], name=var), secondary_y=False)
 
-    
+        for var in secondaryvars:
+            fig.add_trace(go.Scatter(x=df_graph['Time'], y=df_graph[var], name=var), secondary_y=True)
+        
+        fig.update_yaxes(title_text=dict_units.get(primaryvars[0]), secondary_y=False)
+        fig.update_yaxes(title_text=dict_units.get(secondaryvars[0]), secondary_y=True)
 
-    #fig = px.line(df_graph, x='Time', y='Price')
+    else:
+        fig = make_subplots()
+
+        for var in primaryvars:
+            fig.add_trace(go.Scatter(x=df_graph['Time'], y=df_graph[var], name=var), secondary_y=False)
+
+        fig.update_yaxes(title_text=dict_units.get(primaryvars[0]), secondary_y=False)    
+
+
 
 
     return fig
@@ -260,45 +315,72 @@ def update_modelinfo(json_df):
 
     return pv_power, storage_power, storage_energy, efficiency, duration 
 
-# @app.callback(
-#     Output('page-content', 'children'),
-#     [Input('url', 'pathname')]
-# )
-# def display_page(pathname):
-#     if pathname in ['/', '/dashboard']:
-#         return [NAVBAR, BODY]
-#     elif pathname == '/download':
-#         return [NAVBAR, DOWNLOAD]
-#     return dbc.Jumbotron(
+@app.callback(
+    Output('graph-batteryflow', 'figure'),
+    [Input('store-df', 'children'),
+    Input('input-start', 'value'),
+    Input('input-end', 'value')])
+
+def update_batteryflow(json_df, starttime, endtime):
+    if json_df == None:
+        raise PreventUpdate
+    df = pd.read_json(json_df, orient='split')
+
+    #Select data and generate timeseries graph
+    df.columns = df.iloc[4]
+    df_data = df.iloc[5:].reset_index()
+
+    df_data['Time'] = pd.to_datetime(df_data['Time'])
+
+    df_graph = df_data[(df_data['Time'] >= starttime) & (df_data['Time'] <= endtime)]
+    df_graph['Time'] = df_graph.Time.apply(str).apply(lambda x: x[0:16])
+        
+    df_SOC = pd.DataFrame()
+    df_SOC['Time'] = df_graph['Time']
+    df_SOC['Category'] = 'SOC'
+    df_SOC['Battery'] = df_graph['Storage SOC']
+    df_SOC['PV'] = 0
+    df_SOC['Grid'] = 0
+
+    df_PV = pd.DataFrame()
+    df_PV['Time'] = df_graph['Time']
+    df_PV['Category'] = 'PV'
+    df_PV['Battery'] = df_graph['PV gen to charge']
+    df_PV['PV'] = 0
+    df_PV['Grid'] = df_graph['PV gen to grid']
+
+    df_Charge = pd.DataFrame()
+    df_Charge['Time'] = df_graph['Time']
+    df_Charge['Category'] = 'Charge'
+    df_Charge['Battery'] = 0
+    df_Charge['PV'] = df_graph['PV gen to charge']
+    df_Charge['Grid'] = df_graph['Grid gen to charge']  
+
+    df_Discharge = pd.DataFrame()
+    df_Discharge['Time'] = df_graph['Time']
+    df_Discharge['Category'] = 'Discharge'
+    df_Discharge['Battery'] = 0
+    df_Discharge['PV'] = 0
+    df_Discharge['Grid'] = df_graph['Storage discharge']  
+
+    df_out = pd.concat([df_SOC, df_PV, df_Charge, df_Discharge], ignore_index=True)
+
+
+    print(df_out.tail())
+
+    fig = px.bar(df_out, x='Category', y='Battery', animation_frame='Time')
+
+    return fig
+
+app.title = 'Storage Diagnostics'
+# def serve_layout():
+#     return html.Div(
 #         [
-#             html.H1('404: Not found', className='text-danger'),
-#             html.Hr(),
-#             html.P(f'The pathname {pathname} is invalid'),
+#             html.Div(id='page-content', children=[NAVBAR, BODY]) 
 #         ]
 #     )
 
-# @app.callback(
-#     [Output('dashboard-link', 'active'),
-#     Output('download-link', 'active')],
-#     [Input('url', 'pathname')]
-# )
-# def update_active_link(pathname):
-#     if pathname in ['/', '/dashboard']:
-#         return True, False
-#     elif pathname == '/download':
-#         return False, True
-#     return False, False
-
-
-app.title = 'Storage Diagnostics'
-def serve_layout():
-    return html.Div(
-        [
-            html.Div(id='page-content', children=[NAVBAR, BODY]) 
-        ]
-    )
-
-app.layout = serve_layout
+app.layout = html.Div(id='page-content', children=[NAVBAR, BODY]) 
 app.enable_dev_tools(debug=True, dev_tools_props_check=False)
 
 if __name__ == '__main__':
