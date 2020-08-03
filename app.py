@@ -91,7 +91,7 @@ INPUTS = dbc.Jumbotron(
                         ),
                         html.Label('Select End Time', className='lead'),
                         dbc.Input(
-                            id ='input-end', type='datetime-local', style={'marginBottom': 25}, value='2017-12-01T23:00'
+                            id ='input-end', type='datetime-local', style={'marginBottom': 25}, value='2017-12-07T23:00'
                         )
                     ], fluid = True
                 )
@@ -288,7 +288,6 @@ def update_content(json_df, starttime, endtime, primaryvars, secondaryvars):
 
 
 
-
     return fig
 
 @app.callback(
@@ -366,19 +365,25 @@ def update_batteryflow(json_df, starttime, endtime):
     df_out = pd.concat([df_SOC, df_PV, df_Charge, df_Discharge], ignore_index=True)
 
 
-    print(df_out.tail())
+    #fig = px.bar(df_out, x='Category', y='Battery', animation_frame='Time', range_y=[0,600])
 
-    fig = px.bar(df_out, x='Category', y='Battery', animation_frame='Time')
+
+    fig = go.Figure(
+        data=[
+            go.Bar(name='Battery', x=df_out['Category'], y=df_out['Battery']),
+            go.Bar(name='PV', x=df_out['Category'], y=df_out['PV']),
+            go.Bar(name='Grid', x=df_out['Category'], y=df_out['Grid'])
+        ],
+        layout=go.Layout(
+            updatemenus=[dict(type="buttons",buttons=[dict(label="Play",method="animate",args=[None])])]),
+
+        frames=
+    )
+    fig.update_layout(barmode='stack')
 
     return fig
 
 app.title = 'Storage Diagnostics'
-# def serve_layout():
-#     return html.Div(
-#         [
-#             html.Div(id='page-content', children=[NAVBAR, BODY]) 
-#         ]
-#     )
 
 app.layout = html.Div(id='page-content', children=[NAVBAR, BODY]) 
 app.enable_dev_tools(debug=True, dev_tools_props_check=False)
