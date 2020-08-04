@@ -61,7 +61,6 @@ INPUTS = dbc.Jumbotron(
         dcc.Loading(
             id = 'loading-inputs',
             children = [
-                # html.Div(id='store-df', style={'display' : 'none'}),
                 dbc.Container(
                     [
                         html.H4(children='Global Inputs', className='display-5', style = {'fontSize': 36}),
@@ -92,7 +91,8 @@ INPUTS = dbc.Jumbotron(
                         html.Label('Select End Time', className='lead'),
                         dbc.Input(
                             id ='input-end', type='datetime-local', style={'marginBottom': 25}, value='2017-12-07T23:00'
-                        )
+                        ),
+                        dbc.Button(id='submit-btn', color='primary', children='Update time period', size='md')
                     ], fluid = True
                 )
             ]
@@ -103,91 +103,95 @@ INPUTS = dbc.Jumbotron(
 
 CONTENT = html.Div(
     [
-        dcc.Loading(
-            id='loading-content',
-            children = [
-                dbc.CardGroup(
+        dbc.CardGroup(
+            [
+                dbc.Card(
                     [
-                        dbc.Card(
-                            [
-                                html.H5('PV Power (MW)'),
-                                html.P(id='pv-power-value')
-                            ], body=True
-                        ),
-                        dbc.Card(
-                            [
-                                html.H5('Storage Power (MW)'),
-                                html.P(id='storage-power-value')
-                            ], body=True
-                        ),
-                        dbc.Card(
-                            [
-                                html.H5('Storage Energy (MWH)'),
-                                html.P(id='storage-energy-value')
-                            ], body=True
-                        ),
-                        dbc.Card(
-                            [
-                                html.H5('Efficiency'),
-                                html.P(id='efficiency-value')
-                            ], body=True
-                        ),
-                        dbc.Card(
-                            [
-                                html.H5('Duration (Hours)'),
-                                html.P(id='duration-value')
-                            ], body=True
-                        ),
-                    ], style={'text-align': 'Center'}
+                        html.H5('PV Power (MW)'),
+                        html.P(id='pv-power-value')
+                    ], body=True
                 ),
-                dbc.Row(
+                dbc.Card(
                     [
-                        dbc.Col(
-                            [
-                                html.H3('Timeseries Graph', style={'marginTop':25, 'marginBottom':10})
-                            ]
-                        )
+                        html.H5('Storage Power (MW)'),
+                        html.P(id='storage-power-value')
+                    ], body=True
+                ),
+                dbc.Card(
+                    [
+                        html.H5('Storage Energy (MWH)'),
+                        html.P(id='storage-energy-value')
+                    ], body=True
+                ),
+                dbc.Card(
+                    [
+                        html.H5('Efficiency'),
+                        html.P(id='efficiency-value')
+                    ], body=True
+                ),
+                dbc.Card(
+                    [
+                        html.H5('Duration (Hours)'),
+                        html.P(id='duration-value')
+                    ], body=True
+                ),
+            ], style={'text-align': 'Center'}
+        ),
+        dbc.Row(
+            [
+                dbc.Col(
+                    [
+                        html.H3('Timeseries Graph', style={'marginTop':25, 'marginBottom':10})
+                    ]
+                )
 
-                    ]
-                ),
-                dbc.Row(
+            ]
+        ),
+        dbc.Row(
+            [
+                dbc.Col(
                     [
-                        dbc.Col(
-                            [
-                                html.Label('Select Primary Y-Axis Variable(s)'),
-                                dcc.Dropdown(
-                                    id='primaryaxis-drop', multi=True,
-                                    value=['Price'],
-                                    options = [{'label':i, 'value':i} for i in lst_vars]
-                                ),
-                            ], width=4
+                        html.Label('Select Primary Y-Axis Variable(s)'),
+                        dcc.Dropdown(
+                            id='primaryaxis-drop', multi=True,
+                            value=['Price'],
+                            options = [{'label':i, 'value':i} for i in lst_vars]
                         ),
-                        dbc.Col(
-                            [
-                                html.Label('Select Secondary Y-Axis Variable(s) - Optional '),
-                                dcc.Dropdown(
-                                    id='secondaryaxis-drop', multi=True,
-                                    value=['PV gen to grid'],
-                                    options = [{'label':i, 'value':i} for i in lst_vars]
-                                ),
-                            ], width=4
-                        )
-                    ]
+                    ], width=4
                 ),
-                dbc.Row(
+                dbc.Col(
                     [
-                        dbc.Col(
+                        html.Label('Select Secondary Y-Axis Variable(s) - Optional '),
+                        dcc.Dropdown(
+                            id='secondaryaxis-drop', multi=True,
+                            value=['PV gen to grid'],
+                            options = [{'label':i, 'value':i} for i in lst_vars]
+                        ),
+                    ], width=4
+                )
+            ]
+        ),
+        dbc.Row(
+            [
+                dbc.Col(
+                    [ 
+                        dcc.Loading(
                             [
                                 dcc.Graph(id='graph-timeseries')
                             ]
                         )
+
                     ]
-                ),
-                dbc.Row(
+                )
+            ]
+        ),
+        dbc.Row(
+            [
+                dbc.Col(
                     [
-                        dbc.Col(
+                        html.H3('Battery and PV Flow'),
+                        dcc.Loading(
                             [
-                                html.H3('Battery and PV Flow'),
                                 dcc.Graph(id='graph-batteryflow')
                             ]
                         )
@@ -195,7 +199,6 @@ CONTENT = html.Div(
                 )
             ]
         )
-
     ]
 )
 
@@ -244,13 +247,14 @@ def update_output(contents, filename):
 
 @app.callback(
     Output('graph-timeseries', 'figure'),
-    [Input('store-df', 'children'),
-    Input('input-start', 'value'),
-    Input('input-end', 'value'),
+    [Input('submit-btn', 'n_clicks'),
+    Input('store-df', 'children'),
     Input('primaryaxis-drop', 'value'),
-    Input('secondaryaxis-drop', 'value')])
+    Input('secondaryaxis-drop', 'value')],
+    [State('input-start', 'value'),
+    State('input-end', 'value')])
 
-def update_content(json_df, starttime, endtime, primaryvars, secondaryvars):
+def update_content(n_clicks, json_df, primaryvars, secondaryvars, starttime, endtime):
     #Read Dataframe
     if json_df == None:
         raise PreventUpdate
@@ -315,11 +319,12 @@ def update_modelinfo(json_df):
 
 @app.callback(
     Output('graph-batteryflow', 'figure'),
-    [Input('store-df', 'children'),
-    Input('input-start', 'value'),
-    Input('input-end', 'value')])
+    [Input('submit-btn','n_clicks'),
+    Input('store-df', 'children')],
+    [State('input-start', 'value'),
+    State('input-end', 'value')])
 
-def update_batteryflow(json_df, starttime, endtime):
+def update_batteryflow(n_clicks, json_df, starttime, endtime):
     if json_df == None:
         raise PreventUpdate
     print(starttime)
