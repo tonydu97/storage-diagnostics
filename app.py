@@ -17,6 +17,7 @@ import glob
 
 import base64
 import io 
+import datetime
 
 import dash
 import dash_table
@@ -69,8 +70,7 @@ INPUTS = dbc.Jumbotron(
                         dcc.Upload(
                             id='upload-data',
                             children=html.Div([
-                                'Drag and Drop or ',
-                                html.A('Select Files')
+                                'Drag and Drop or select a file to upload.'
                             ]),
                             style={
                                 'width': '100%',
@@ -215,7 +215,6 @@ BODY = dbc.Container(
 
 
 def parse_dataframe(contents, filename):
-
     content_type, content_string = contents.split(',')
 
     decoded = base64.b64decode(content_string)
@@ -323,6 +322,8 @@ def update_modelinfo(json_df):
 def update_batteryflow(json_df, starttime, endtime):
     if json_df == None:
         raise PreventUpdate
+    print(starttime)
+    print(endtime)
     df = pd.read_json(json_df, orient='split')
 
     #Select data and generate timeseries graph
@@ -330,56 +331,59 @@ def update_batteryflow(json_df, starttime, endtime):
     df_data = df.iloc[5:].reset_index()
 
     df_data['Time'] = pd.to_datetime(df_data['Time'])
+    df_data['Time'] = df_data['Time'].dt.round('H')
 
     df_graph = df_data[(df_data['Time'] >= starttime) & (df_data['Time'] <= endtime)]
     df_graph['Time'] = df_graph.Time.apply(str).apply(lambda x: x[0:16])
-        
+    print(df_graph.tail())
+    
+
     df_SOC = pd.DataFrame()
     df_SOC['Time'] = df_graph['Time']
-    df_SOC['Category'] = 'SOC'
-    df_SOC['Battery'] = df_graph['Storage SOC']
-    df_SOC['PV'] = 0
-    df_SOC['Grid'] = 0
+    df_SOC['Category'] = 'Storage SOC'
+    df_SOC['Value'] = df_graph['Storage SOC']
+   
 
-    df_PV = pd.DataFrame()
-    df_PV['Time'] = df_graph['Time']
-    df_PV['Category'] = 'PV'
-    df_PV['Battery'] = df_graph['PV gen to charge']
-    df_PV['PV'] = 0
-    df_PV['Grid'] = df_graph['PV gen to grid']
 
     df_Charge = pd.DataFrame()
     df_Charge['Time'] = df_graph['Time']
-    df_Charge['Category'] = 'Charge'
-    df_Charge['Battery'] = 0
-    df_Charge['PV'] = df_graph['PV gen to charge']
-    df_Charge['Grid'] = df_graph['Grid gen to charge']  
+    df_Charge['Category'] = 'Storage Charge'
+    df_Charge['Value'] = df_graph['Storage charge']
+  
 
     df_Discharge = pd.DataFrame()
     df_Discharge['Time'] = df_graph['Time']
-    df_Discharge['Category'] = 'Discharge'
-    df_Discharge['Battery'] = 0
-    df_Discharge['PV'] = 0
-    df_Discharge['Grid'] = df_graph['Storage discharge']  
-
-    df_out = pd.concat([df_SOC, df_PV, df_Charge, df_Discharge], ignore_index=True)
+    df_Discharge['Category'] = 'Storage Discharge'
+    df_Discharge['Value'] = -df_graph['Storage discharge']
+   
 
 
-    #fig = px.bar(df_out, x='Category', y='Battery', animation_frame='Time', range_y=[0,600])
+    df_PV = pd.DataFrame()
+    df_PV['Time'] = df_graph['Time']
+    df_PV['Category'] = 'PV Generation'
+    df_PV['Value'] = df_graph['PV gen']
 
 
-    fig = go.Figure(
-        data=[
-            go.Bar(name='Battery', x=df_out['Category'], y=df_out['Battery']),
-            go.Bar(name='PV', x=df_out['Category'], y=df_out['PV']),
-            go.Bar(name='Grid', x=df_out['Category'], y=df_out['Grid'])
-        ],
-        layout=go.Layout(
-            updatemenus=[dict(type="buttons",buttons=[dict(label="Play",method="animate",args=[None])])]),
 
-        frames=
-    )
-    fig.update_layout(barmode='stack')
+    df_PVtoBattery = pd.DataFrame()
+    df_PVtoBattery['Time'] = df_graph['Time']
+    df_PVtoBattery['Category'] = 'PV to battery'
+    df_PVtoBattery['Value'] = df_graph['PV gen to charge']
+   
+
+
+    df_PVtoGrid = pd.DataFrame()
+    df_PVtoGrid['Time'] = df_graph['Time']
+    df_PVtoGrid['Category'] = 'PV to grid'
+    df_PVtoGrid['Value'] = df_graph['PV gen to grid']
+
+
+    df_out = pd.concat([df_SOC, df_Charge, df_Discharge, df_PV, df_PVtoBattery, df_PVtoGrid], ignore_index=True)
+
+    
+    fig = px.bar(df_out, x='Category', y='Value', animation_frame='Time', range_y=[-150,550],
+        color='Category', color_discrete_sequence=['#636EFA', '#00CC96', '#EF553B', '#FECB52', '#00CC96', '#EF553B'])
+    fig.update_layout(showlegend=False)
 
     return fig
 
