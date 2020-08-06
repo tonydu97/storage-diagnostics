@@ -37,6 +37,11 @@ from plotly.subplots import make_subplots
 
 lst_vars = ['Price', 'PV avail', 'PV gen', 'PV gen to grid', 'PV gen to charge', 'Grid gen to charge', 'Storage charge', 'Storage discharge', 'Storage SOC']
 dict_units = {'Price':'$', 'PV avail':'Percentage (out of 1)', 'PV gen':'MWH', 'PV gen to grid':'MWH', 'PV gen to charge':'MWH', 'Grid gen to charge':'MWH', 'Storage charge':'MWH', 'Storage discharge':'MWH', 'Storage SOC':'MWH'}
+inputfolder = os.getcwd() + '\\input\\' 
+
+
+inputfile = inputfolder + [i for i in os.listdir(inputfolder) if os.path.isfile(os.path.join(inputfolder, i)) and '.xls' in i][0]
+df_global = pd.read_excel(inputfile, header=None)
 
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP], suppress_callback_exceptions=True)
 server = app.server  # for Heroku deployment
@@ -58,45 +63,31 @@ NAVBAR = dbc.Navbar(
 
 INPUTS = dbc.Jumbotron(
     [
-        dcc.Loading(
-            id = 'loading-inputs',
-            children = [
-                dbc.Container(
-                    [
-                        html.H4(children='Global Inputs', className='display-5', style = {'fontSize': 36}),
-                        html.Hr(className='my-2'),
-                        html.Label('Import Results', className='lead'),
-                        dcc.Upload(
-                            id='upload-data',
-                            children=html.Div([
-                                'Drag and Drop or select a file to upload.'
-                            ]),
-                            style={
-                                'width': '100%',
-                                'height': '60px',
-                                'lineHeight': '60px',
-                                'borderWidth': '1px',
-                                'borderStyle': 'dashed',
-                                'borderRadius': '5px',
-                                'textAlign': 'center',
-                                'margin': '10px'
-                            },
-                        ),
-                        html.Div(id='store-df', style={'display' : 'none'}),
-                        html.Div(style = {'marginBottom':25}),
-                        html.Label('Select Start Time', className='lead'),
-                        dbc.Input(
-                            id ='input-start', type='datetime-local', style={'marginBottom': 25}, value='2017-12-01T00:00'
-                        ),
-                        html.Label('Select End Time', className='lead'),
-                        dbc.Input(
-                            id ='input-end', type='datetime-local', style={'marginBottom': 25}, value='2017-12-07T23:00'
-                        ),
-                        dbc.Button(id='submit-btn', color='primary', children='Update time period', size='md')
-                    ], fluid = True
-                )
-            ]
-
+        dbc.Container(
+            [
+                html.H4(children='Global Inputs', className='display-5', style = {'fontSize': 36}),
+                html.Hr(className='my-2'),
+                html.Label('Import Results', className='lead'),
+                html.Div(
+                    id='input-div',
+                    children=[
+                        dcc.Dropdown(
+                            id='input-drop', clearable=False
+                        )
+                    ]    
+                ),
+                html.Div(id='store-df', style={'display' : 'none'}),
+                html.Div(style = {'marginBottom':25}),
+                html.Label('Select Start Time', className='lead'),
+                dbc.Input(
+                    id ='input-start', type='datetime-local', style={'marginBottom': 25}, value='2017-12-01T00:00'
+                ),
+                html.Label('Select End Time', className='lead'),
+                dbc.Input(
+                    id ='input-end', type='datetime-local', style={'marginBottom': 25}, value='2017-12-07T23:00'
+                ),
+                dbc.Button(id='submit-btn', color='primary', children='Update time period and refresh graphs', size='md')
+            ], fluid = True
         )
     ], style={'height':'100%'}
 )
@@ -217,58 +208,56 @@ BODY = dbc.Container(
 )
 
 
-def parse_dataframe(contents, filename):
-    content_type, content_string = contents.split(',')
+@app.callback(
+    Output('input-drop', 'options'),
+    [Input('input-div', 'n_clicks')]
+)
 
-    decoded = base64.b64decode(content_string)
-    try:
-        if 'csv' in filename:
-            df = pd.read_csv(io.StringIO(decoded.decode('utf-8')))
-        elif 'xls' in filename:
-            df = pd.read_excel(io.BytesIO(decoded), header=None)
-    except Exception as e:
-        print(e)
-        return html.Div(['There was an error processing this file.'])
+def update_dropdown_options(n_clicks):
+    if n_clicks is None:
+        raise PreventUpdate
+    options = [i for i in os.listdir(inputfolder) if os.path.isfile(os.path.join(inputfolder, i)) and '.xls' in i]
+    return [{'label':i, 'value':i} for i in options]
 
-    return df.to_json(date_format='iso', orient='split')
 
 @app.callback(
     Output('store-df', 'children'),
-    [Input('upload-data', 'contents')],
-    [State('upload-data', 'filename')])
-def update_output(contents, filename):
-    if contents is None:
+    [Input('input-drop', 'value')]
+)
+
+def store_jsondf(filename):
+    if filename is None:
         raise PreventUpdate
-    else:
-        return parse_dataframe(contents, filename)
 
-
-
+    df = pd.read_excel(inputfolder + filename, header=None)
+    return df.to_json(date_format='iso', orient='split')
 
 @app.callback(
     Output('graph-timeseries', 'figure'),
     [Input('submit-btn', 'n_clicks'),
-    Input('store-df', 'children'),
     Input('primaryaxis-drop', 'value'),
-    Input('secondaryaxis-drop', 'value')],
+    Input('secondaryaxis-drop', 'value'),
+    Input('store-df', 'children')],
     [State('input-start', 'value'),
     State('input-end', 'value')])
 
-def update_content(n_clicks, json_df, primaryvars, secondaryvars, starttime, endtime):
-    #Read Dataframe
-    if json_df == None:
+def update_content(n_clicks,  primaryvars, secondaryvars, json_df, starttime, endtime):
+    if json_df is None:
         raise PreventUpdate
-    df = pd.read_json(json_df, orient='split')
 
+    df = pd.read_json(json_df, orient='split')
+    
     #Select data and generate timeseries graph
     df.columns = df.iloc[4]
     df_data = df.iloc[5:].reset_index()
 
+    print('convert to dt')
     df_data['Time'] = pd.to_datetime(df_data['Time'])
 
+    print('filter on dt')
     df_graph = df_data[(df_data['Time'] >= starttime) & (df_data['Time'] <= endtime)]
 
-
+    print('make graphs')
     if len(secondaryvars) != 0:
         fig = make_subplots(specs=[[{'secondary_y' : True}]])
 
@@ -303,9 +292,10 @@ def update_content(n_clicks, json_df, primaryvars, secondaryvars, starttime, end
 
 def update_modelinfo(json_df):
     #Read Dataframe
-    if json_df == None:
+    if json_df is None:
         raise PreventUpdate
     df = pd.read_json(json_df, orient='split')
+
 
     #Update model info headers
     pv_power = '{:.2f}'.format(df.iloc[0,1])
@@ -319,29 +309,31 @@ def update_modelinfo(json_df):
 
 @app.callback(
     Output('graph-batteryflow', 'figure'),
-    [Input('submit-btn','n_clicks'),
-    Input('store-df', 'children')],
-    [State('input-start', 'value'),
+    [Input('submit-btn','n_clicks')],
+    [State('store-df', 'children'),
+    State('input-start', 'value'),
     State('input-end', 'value')])
 
 def update_batteryflow(n_clicks, json_df, starttime, endtime):
-    if json_df == None:
+    if json_df is None:
         raise PreventUpdate
-    print(starttime)
-    print(endtime)
+
     df = pd.read_json(json_df, orient='split')
 
     #Select data and generate timeseries graph
+    
     df.columns = df.iloc[4]
     df_data = df.iloc[5:].reset_index()
+
 
     df_data['Time'] = pd.to_datetime(df_data['Time'])
     df_data['Time'] = df_data['Time'].dt.round('H')
 
+
+
     df_graph = df_data[(df_data['Time'] >= starttime) & (df_data['Time'] <= endtime)]
-    df_graph['Time'] = df_graph.Time.apply(str).apply(lambda x: x[0:16])
-    print(df_graph.tail())
-    
+    df_graph.loc[:,'Time'] = df_graph.loc[:,'Time'].apply(str).apply(lambda x: x[0:16])
+
 
     df_SOC = pd.DataFrame()
     df_SOC['Time'] = df_graph['Time']
@@ -385,9 +377,10 @@ def update_batteryflow(n_clicks, json_df, starttime, endtime):
 
     df_out = pd.concat([df_SOC, df_Charge, df_Discharge, df_PV, df_PVtoBattery, df_PVtoGrid], ignore_index=True)
 
-    
+
     fig = px.bar(df_out, x='Category', y='Value', animation_frame='Time', range_y=[-150,550],
         color='Category', color_discrete_sequence=['#636EFA', '#00CC96', '#EF553B', '#FECB52', '#00CC96', '#EF553B'])
+
     fig.update_layout(showlegend=False)
 
     return fig
